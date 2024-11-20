@@ -284,6 +284,42 @@ def process_image_route():
     return render_template("select_summary.html", filename=output_filename)
 
 
+
+@app.route('/quizup', methods=['GET', 'POST'])
+def quizup():
+    try:
+        global questions
+        questions = {}
+
+        quiz_file = request.files['quiz']
+        filename = quiz_file.filename
+        quiz_file.save(filename)
+
+        if filename.lower().endswith('.txt'):
+            with open(filename, 'r') as file:
+                text = file.read()
+            questions = txt2questions(text)
+
+            if text:
+                return jsonify({
+                    "success": True,
+                    "message": "Quiz generated successfully!"
+                })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Invalid file type. Please upload a text file."
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error generating quiz: {e}"
+        })
+
+
+
+
+
 @app.route('/success', methods=['POST'])
 def success():
     if request.method == 'POST':
@@ -367,6 +403,41 @@ def success():
 
         
         elif option == 'quiz' and 'quiz' in request.files and request.files['quiz'].filename != '':
+
+            # try:
+            #     global questions
+            #     questions = {}
+
+            #     quiz_file = request.files['quiz']
+            #     filename = quiz_file.filename
+            #     quiz_file.save(filename)
+
+            #     if filename.lower().endswith('.txt'):
+            #         with open(filename, 'r') as file:
+            #             text = file.read()
+            #         questions = txt2questions(text)
+
+            #         if text:
+            #             return jsonify({
+            #                 "success": True,
+            #                 "message": "Quiz generated successfully!"
+            #             })
+            #     else:
+            #         return jsonify({
+            #             "success": False,
+            #             "message": "Invalid file type. Please upload a text file."
+            #         })
+            # except Exception as e:
+            #     return jsonify({
+            #         "success": False,
+            #         "message": f"Error generating quiz: {e}"
+            #     })
+
+
+
+
+
+
             UPLOAD_STATUS = False
             global questions
             questions = dict()
@@ -526,14 +597,8 @@ def summarize():
 
 @app.route('/quiz', methods=['GET', 'POST'])
 def quiz():
-
-    UPLOAD_STATUS = False
-    questions = dict()
-
+    global questions
     if request.method == 'POST':
-        print("\n\n\n\n\n")
-        print("Reached Debug Point 2")
-        print("\n\n\n\n\n")
         try:
             uploaded_file = request.files['quiz']
             filename = uploaded_file.filename
@@ -544,34 +609,35 @@ def quiz():
 
             questions = txt2questions(text)
 
-            print("\n\n\n\n\n")
-            print(text)
-            print("\n\n\n\n\n")
+            return jsonify({"success": True, "message": "Quiz generated successfully!"})
 
-            # File upload + convert success
-            if text is not None:
-                UPLOAD_STATUS = True
         except Exception as e:
-            print("\n\n\n\n\nError caught:", e, "\n\n\n\n\n")
-    return render_template(
-        'quiz.html',
-        uploaded=UPLOAD_STATUS,
-        questions=questions,
-        size=len(questions)
-    )
+            return jsonify({"success": False, "message": f"Error processing quiz: {e}"}), 400
+
+    elif request.method == 'GET':
+        if questions:
+            return jsonify({"success": True, "questions": questions})
+        else:
+            return jsonify({"success": False, "message": "No quiz found. Please generate a quiz first."}), 404
 
 
-@app.route('/results', methods=['POST', 'GET'])
+
+
+@app.route('/results', methods=['POST'])
 def result():
-    # Count correct answers
+    answers = request.json
     correct_q = 0
     for q_num, data in questions.items():
-        user_answer = request.form.get(f'question{q_num}')
-        print("\nUser answer: ", user_answer)
-        print("\nActual answer: ", data['answer'],"\n\n")
+        user_answer = answers.get(str(q_num))
         if user_answer == data['answer']:
             correct_q += 1
-    return render_template('results.html', total=len(questions), correct=correct_q)
+
+    return jsonify({
+        "success": True,
+        "correct": correct_q,
+        "total": len(questions),
+    })
+
 
 
 if __name__ == '__main__':

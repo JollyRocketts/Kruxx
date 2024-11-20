@@ -1,107 +1,143 @@
 import React, { useState, useEffect } from "react";
 
 function QuizPage() {
-  const [quizData, setQuizData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedAnswers, setSelectedAnswers] = useState({});
-  const [results, setResults] = useState(null);
+  const [questions, setQuestions] = useState({});
+  const [totalQuestions, setTotalQuestions] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [isQuizLoaded, setIsQuizLoaded] = useState(false);
+  const [result, setResult] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // Fetch quiz data from the Flask backend
+  // Fetch quiz questions from Flask backend
   useEffect(() => {
     fetch("http://127.0.0.1:5000/quiz", {
       method: "GET",
+      headers: { "Content-Type": "application/json" },
     })
-      .then((response) => response.json())
-      .then((data) => {
-        setQuizData(data);
-        setLoading(false);
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to fetch quiz data.");
+        }
+        return response.json();
       })
-      .catch((err) => {
-        setError("Failed to load quiz data. Please try again.");
-        setLoading(false);
+      .then((data) => {
+        if (data.success) {
+          setQuestions(data.questions);
+          setTotalQuestions(Object.keys(data.questions).length);
+          setIsQuizLoaded(true);
+        } else {
+          setErrorMessage(data.message || "No quiz available to display. Please generate one.");
+        }
+      })
+      .catch((error) => {
+        console.error("Error fetching quiz:", error);
+        setErrorMessage("An error occurred while fetching the quiz.");
       });
   }, []);
 
   // Handle answer selection
-  const handleAnswerChange = (questionId, answer) => {
-    setSelectedAnswers((prev) => ({
-      ...prev,
-      [questionId]: answer,
+  const handleAnswerChange = (questionNumber, selectedOption) => {
+    setAnswers((prevAnswers) => ({
+      ...prevAnswers,
+      [questionNumber]: selectedOption,
     }));
   };
 
-  // Submit quiz answers
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  // Submit answers and fetch results
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-    fetch("http://127.0.0.1:5000/results", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(selectedAnswers),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        setResults(data);
-      })
-      .catch((err) => {
-        setError("Failed to submit answers. Please try again.");
+    try {
+      const response = await fetch("http://127.0.0.1:5000/results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(answers), // Directly send the answers object
       });
+
+      if (!response.ok) {
+        throw new Error("Failed to submit quiz.");
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setResult({
+          correct: data.correct,
+          total: data.total,
+        });
+      } else {
+        setErrorMessage(data.message || "An error occurred while submitting the quiz.");
+      }
+    } catch (error) {
+      console.error("Error submitting quiz:", error);
+      setErrorMessage("An error occurred while submitting the quiz.");
+    }
   };
-
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>{error}</div>;
-
-  if (results) {
-    // Display the result after submission
-    return (
-      <div className="container">
-        <h1 className="text-center text-xl font-bold mt-10">Quiz Results</h1>
-        <p className="text-center mt-4 text-lg">
-          You got {results.correct} out of {results.total} correct!
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="container">
-      <h1 className="text-center text-2xl font-bold mt-10">Quiz</h1>
-      <form onSubmit={handleSubmit} className="mt-6">
-        {quizData &&
-          Object.keys(quizData.questions).map((questionId) => {
-            const question = quizData.questions[questionId];
-            return (
-              <div key={questionId} className="mb-6">
+      <section className="top">
+        <div className="container top">
+          <h3 className="text-2xl font-bold">Quiz</h3>
+        </div>
+      </section>
+
+      <section className="mid mt-8">
+        {/* Display Error Message */}
+        {errorMessage && (
+          <div className="error-message text-red-500 text-center">
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Display Quiz Form */}
+        {isQuizLoaded && !result && (
+          <form onSubmit={handleSubmit}>
+            {Object.entries(questions).map(([questionNumber, questionData], index) => (
+              <div key={questionNumber} className="mb-6">
                 <h4 className="font-semibold">
-                  {questionId}. {question.question}
+                  {index + 1}. {questionData.question}
                 </h4>
-                <div className="mt-2">
-                  {question.options.map((option, idx) => (
-                    <label key={idx} className="block mb-2">
-                      <input
-                        type="radio"
-                        name={`question${questionId}`}
-                        value={option}
-                        onChange={() => handleAnswerChange(questionId, option)}
-                        className="mr-2"
-                      />
-                      {option}
-                    </label>
+                <div className="options">
+                  {questionData.options.map((option, optionIndex) => (
+                    <div key={optionIndex} className="option mt-2">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          name={`question${questionNumber}`}
+                          value={option}
+                          onChange={() =>
+                            handleAnswerChange(questionNumber, option)
+                          }
+                          className="cursor-pointer"
+                        />
+                        <span>{option}</span>
+                      </label>
+                    </div>
                   ))}
                 </div>
               </div>
-            );
-          })}
-        <div className="flex justify-center mt-10">
-          <button
-            type="submit"
-            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600"
-          >
-            Submit
-          </button>
-        </div>
-      </form>
+            ))}
+
+            <button
+              type="submit"
+              className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600"
+            >
+              Submit Quiz
+            </button>
+          </form>
+        )}
+
+        {/* Display Results */}
+        {result && (
+          <section className="result mt-8">
+            <h3 className="text-2xl font-bold text-center">Quiz Results</h3>
+            <p className="text-lg text-center mt-4">
+              You got {result.correct} out of {result.total} correct!
+            </p>
+          </section>
+        )}
+      </section>
     </div>
   );
 }
