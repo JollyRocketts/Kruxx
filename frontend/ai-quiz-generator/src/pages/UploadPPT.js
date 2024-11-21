@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 function UploadPPT() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -7,6 +8,9 @@ function UploadPPT() {
   const [selectedOption3, setSelectedOption3] = useState("short");
   const [message, setMessage] = useState('');
   const [summary, setSummary] = useState('');  // State to store summary text
+  const [quizMessage, setQuizMessage] = useState('');  // State for quiz generation message
+  const [quizGenerated, setQuizGenerated] = useState(false);  // State to track if quiz is generated
+  const navigate = useNavigate();
 
   const handlePPTUpload = (event) => {
     const file = event.target.files[0];
@@ -43,6 +47,36 @@ function UploadPPT() {
       }
     } catch (error) {
       setMessage('An error occurred. Please try again later.');
+      console.error('Error:', error);
+    }
+  };
+
+  const handleGenerateQuiz = async () => {
+    if (!selectedFile) {
+      setQuizMessage('Please upload a PPT to generate a quiz.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('ppt', selectedFile);
+
+    try {
+      const response = await fetch('http://127.0.0.1:5000/quiz-ppt', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setQuizMessage(data.message);
+        setQuizGenerated(true);
+        navigate("/quiz");
+      } else {
+        setQuizMessage(data.message || 'Failed to generate the quiz.');
+      }
+    } catch (error) {
+      setQuizMessage('An error occurred while generating the quiz.');
       console.error('Error:', error);
     }
   };
@@ -142,39 +176,46 @@ function UploadPPT() {
         </div>
 
         <div className={`${summary ? "" : "absolute bottom-20"} w-1/3 mt-16 bg-white shadow-lg rounded-xl p-6 flex flex-col justify-center items-center`}>
-        <div className="flex flex-row justify-around flex-wrap gap-8">
-          <button
-            className="bg-orange-400 text-white px-6 py-2 rounded-md hover:bg-orange-500"
-            onClick={handleSubmit}
-          >
-            Summarize
-          </button>
-          <button className="bg-orange-400 text-white px-8 py-2 rounded-md hover:bg-orange-500">
-            Generate Quiz
-          </button>
-        </div>
-        {message && <p className="text-red-500 mt-4">{message}</p>}
-      </div>
-      <div className='w-full'>
-
-
-      {/* Display the summary box if summary is available */}
-      {summary && (
-        <main className="py-10">
-          <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
-            <textarea
-              className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
-              value={summary}
-              readOnly
-              placeholder="Summary will appear here..."
-              ></textarea>
+          <div className="flex flex-row justify-around flex-wrap gap-8">
+            <button
+              className="bg-orange-400 text-white px-6 py-2 rounded-md hover:bg-orange-500"
+              onClick={handleSubmit}
+            >
+              Summarize
+            </button>
+            <button
+              className="bg-orange-400 text-white px-8 py-2 rounded-md hover:bg-orange-500"
+              onClick={handleGenerateQuiz}
+            >
+              Generate Quiz
+            </button>
           </div>
-        </main>
-      )}
-      </div>
+          {message && <p className="text-red-500 mt-4">{message}</p>}
+          {quizMessage && (
+            <p className={`mt-4 ${quizGenerated ? "text-green-500" : "text-red-500"}`}>
+              {quizMessage}
+            </p>
+          )}
+        </div>
+        <div className='w-full'>
 
-      {/* Display message if there's an error or no file uploaded */}
-      {message && <p className="text-red-500 mt-4">{message}</p>}
+          {/* Display the summary box if summary is available */}
+          {summary && (
+            <main className="py-10">
+              <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
+                <textarea
+                  className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
+                  value={summary}
+                  readOnly
+                  placeholder="Summary will appear here..."
+                ></textarea>
+              </div>
+            </main>
+          )}
+        </div>
+
+        {/* Display message if there's an error or no file uploaded */}
+        {message && <p className="text-red-500 mt-4">{message}</p>}
       </div>
     </>
   );

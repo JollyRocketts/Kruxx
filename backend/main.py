@@ -271,6 +271,178 @@ def upload_doc():
 
 
 
+# @app.route('/quiz-image', methods=['POST'])
+# def quiz_image():
+
+
+
+@app.route('/quiz-pdf', methods=['POST'])
+def quiz_pdf():
+    try:
+        if 'pdf' in request.files and request.files['pdf'].filename != '':
+            pdf_file = request.files['pdf']
+            filename = pdf_file.filename
+            pdf_file.save(filename)
+
+            if filename.lower().endswith('.pdf'):
+                # Extract text from the PDF
+                extracted_text = textract.process(filename).decode('utf-8')
+                text_filename = f"{filename}_text.txt"
+
+                # Save the extracted text to a .txt file
+                with open(text_filename, "w", encoding="utf-8") as text_file:
+                    text_file.write(extracted_text)
+
+                # Generate quiz questions from the text file
+                with open(text_filename, "r", encoding="utf-8") as file:
+                    text = file.read()
+
+                global questions
+                questions = txt2questions(text)
+
+                if questions:
+                    return jsonify({
+                        "success": True,
+                        "message": "Quiz generated successfully!",
+                        "questions": questions,
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "message": "Failed to generate quiz from the provided text.",
+                    })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Uploaded file is not a PDF.",
+                })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "No file was uploaded.",
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error processing quiz from PDF: {e}",
+        })
+
+
+
+@app.route('/quiz-doc', methods=['POST'])
+def quiz_doc():
+    try:
+        if 'doc' in request.files and request.files['doc'].filename != '':
+            doc_file = request.files['doc']
+            filename = doc_file.filename
+            doc_file.save(filename)
+
+            if filename.lower().endswith(('.doc','.docx')):
+                # Extract text from the PDF
+                extracted_text = textract.process(filename).decode('utf-8')
+                text_filename = f"{filename}_text.txt"
+
+                # Save the extracted text to a .txt file
+                with open(text_filename, "w", encoding="utf-8") as text_file:
+                    text_file.write(extracted_text)
+
+                # Generate quiz questions from the text file
+                with open(text_filename, "r", encoding="utf-8") as file:
+                    text = file.read()
+
+                global questions
+                questions = txt2questions(text)
+
+                if questions:
+                    return jsonify({
+                        "success": True,
+                        "message": "Quiz generated successfully!",
+                        "questions": questions,
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "message": "Failed to generate quiz from the provided text.",
+                    })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Uploaded file is not a DOC.",
+                })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "No file was uploaded.",
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error processing quiz from DOC: {e}",
+        })
+
+
+
+@app.route('/quiz-ppt', methods=['POST'])
+def quiz_ppt():
+    try:
+        if 'ppt' in request.files and request.files['ppt'].filename != '':
+            ppt_file = request.files['ppt']
+            filename = ppt_file.filename
+            ppt_file.save(filename)
+
+            if filename.lower().endswith('.pptx'):
+                # Extract text from the PDF
+                def extract_text_from_ppt(filename):
+                    prs = Presentation(filename)
+                    text = []
+                    for slide in prs.slides:
+                        for shape in slide.shapes:
+                            if shape.has_text_frame:
+                                for paragraph in shape.text_frame.paragraphs:
+                                    text.append(paragraph.text)
+                    return "\n".join(text)
+
+                extracted_text = extract_text_from_ppt(filename)
+                text_filename = f"{filename}_text.txt"
+
+                print(text_filename, "\n\n\n")
+
+                with open(text_filename, "w", encoding="utf-8") as text_file:
+                    text_file.write(extracted_text)
+
+                global questions
+                questions = txt2questions(extracted_text)
+
+                if questions:
+                    return jsonify({
+                        "success": True,
+                        "message": "Quiz generated successfully!",
+                        "questions": questions,
+                    })
+                else:
+                    return jsonify({
+                        "success": False,
+                        "message": "Failed to generate quiz from the provided text.",
+                    })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Uploaded file is not a PPT.",
+                })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "No file was uploaded.",
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Error processing quiz from PPT: {e}",
+        })
+
+
+
+
 @app.route('/process_image', methods=['POST'])
 def process_image_route():
     filename = request.form.get('filename')
