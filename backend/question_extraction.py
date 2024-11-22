@@ -193,7 +193,7 @@ class QuestionExtractor:
                 )
 
                 # Check if the question is blank or invalid
-                if question_text.strip() == '':
+                if question_text.strip() == '' or question_text.strip('_') == "" or question_text.strip("_")==".":
                     idx += 1
                     continue  # Skip this candidate and move to the next
 

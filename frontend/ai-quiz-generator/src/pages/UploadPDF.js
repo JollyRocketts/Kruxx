@@ -42,6 +42,8 @@ function UploadPDF() {
       if (data.success) {
         setSummary(data.summary);
         setMessage(data.message);
+        console.log(data.summary);
+        
       } else {
         setMessage(data.message || 'An error occurred while uploading the PDF.');
       }
@@ -199,8 +201,8 @@ function UploadPDF() {
         </div>
 
         {summary && (
-          <main className="py-10">
-            <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
+          <main className="py-10 w-full ">
+            <div className="w-1/2 text-black h-64 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
               <textarea
                 className="w-full h-full border-none"
                 value={summary}

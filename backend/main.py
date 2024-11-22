@@ -13,7 +13,7 @@ from pptx import Presentation
 app = Flask(__name__)
 CORS(app)
 
-app.secret_key = "Fg4bCUP3odF0ZvMgIS3wqJudc30Us0nv"
+app.secret_key = "secret_key"
 
 bart_summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 bert_summarizer = pipeline("summarization", model="bert-base-uncased")
