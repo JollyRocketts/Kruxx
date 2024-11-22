@@ -721,6 +721,168 @@ def success():
             return render_template("ack.html", message=message)
 
 
+@app.route('/link-upload', methods=['POST'])
+def link_upload():
+    # Parse incoming JSON data
+    data = request.get_json()
+    link = data['link']
+    summary_type = data['summary_type']
+    summary_length = data['summary_length']
+
+    response = requests.get(link)
+    
+    # Validate input
+    if not link:
+        return jsonify({"message": "Link is required."}), 400
+
+    html_filename = "downloaded_link.html"
+    with open(html_filename, "w", encoding="utf-8") as html_file:
+        html_file.write(response.text)
+    
+    # Process the saved HTML file with Textract
+    extracted_text = textract.process(html_filename, method='html').decode('utf-8')
+    text_filename = "link_extracted_text.txt"
+    with open(text_filename, "w", encoding="utf-8") as text_file:
+        text_file.write(extracted_text)
+
+
+    max_input_length = 512
+
+    if summary_length == 'short':
+        max_output_length = 50
+    elif summary_length == 'medium':
+        max_output_length = 130
+    elif summary_length == 'long':
+        max_output_length = 250
+    else:
+        max_output_length = 130
+
+    truncated_text = extracted_text[:max_input_length]
+
+    try:
+        if summary_type == 'abstractive':
+            summary = bart_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+        elif summary_type == 'extractive':
+            summary = bert_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+        else:
+            summary = "Invalid summary type selected."
+
+        summary_filename = f"{html_filename}_summary.txt"
+        
+        with open(summary_filename, 'w', encoding="utf-8") as summary_file:
+            summary_file.write(summary)
+
+        message = f"Summary generated and saved to {summary_filename} using {summary_type.upper()} with {summary_length} length."
+        return jsonify(success=True, message=message, summary=summary)  # Send summary to frontend
+    except Exception as e:
+        return jsonify(success=False, message=f"Error during summarization: {e}")
+
+
+
+@app.route("/video-upload", methods=["POST"])
+def video_upload():
+    data = request.get_json()
+    video_url = data.get("link")
+    video_id = video_url.split('v=')[-1]
+    summary_type = data.get("summary_type")
+    summary_length = data.get("summary_length")
+
+    if video_url:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        formatter = TextFormatter()
+        formatted_transcript = formatter.format_transcript(transcript)
+        
+        transcript_filename = f"{video_id}_transcript.txt"
+        with open(transcript_filename, 'w', encoding="utf-8") as transcript_file:
+            transcript_file.write(formatted_transcript)
+            
+
+        # Process the transcript to summarize
+        max_input_length = 512
+
+        if summary_length == 'short':
+            max_output_length = 50
+        elif summary_length == 'medium':
+            max_output_length = 130
+        elif summary_length == 'long':
+            max_output_length = 250
+        else:
+            max_output_length = 130
+
+        truncated_text = formatted_transcript[:max_input_length]
+
+        try:
+            if summary_type == 'abstractive':
+                summary = bart_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+            elif summary_type == 'extractive':
+                summary = bert_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+            else:
+                summary = "Invalid summary type selected."
+
+            summary_filename = f"{transcript_filename}_summary.txt"
+            
+            with open(summary_filename, 'w', encoding="utf-8") as summary_file:
+                summary_file.write(summary)
+
+            message = f"Summary generated and saved to {summary_filename} using {summary_type.upper()} with {summary_length} length."
+            return jsonify(success=True, message=message, summary=summary)
+        except Exception as e:
+            return jsonify(success=False, message=f"Error during summarization: {e}")
+
+    return jsonify({"message": "No video link provided."}), 400
+
+
+@app.route("/txt-summarize", methods=["POST"])
+def txt_summarize():
+    try:
+        text_file = request.files.get("text_file")
+        filename = text_file.filename
+        text_file.save(filename)
+        summary_type = request.form.get("summary_type")
+        summary_length = request.form.get("summary_length")
+
+        if not text_file:
+            return jsonify({"message": "No file uploaded."}), 400
+        
+        with open(filename, 'r') as file:
+            text = file.read()
+
+        max_input_length = 512
+
+        if summary_length == 'short':
+            max_output_length = 50
+        elif summary_length == 'medium':
+            max_output_length = 130
+        elif summary_length == 'long':
+            max_output_length = 250
+        else:
+            max_output_length = 130
+
+        truncated_text = text[:max_input_length]
+
+        try:
+            if summary_type == 'abstractive':
+                summary = bart_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+            elif summary_type == 'extractive':
+                summary = bert_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+            else:
+                summary = "Invalid summary type selected."
+
+            summary_filename = f"{filename}_summary.txt"
+            
+            with open(summary_filename, 'w', encoding="utf-8") as summary_file:
+                summary_file.write(summary)
+
+            message = f"Summary generated and saved to {summary_filename} using {summary_type.upper()} with {summary_length} length."
+            return jsonify(success=True, message=message, summary=summary)
+        except Exception as e:
+            return jsonify(success=False, message=f"Error during summarization: {e}")
+
+    except Exception as e:
+        return jsonify({"message": str(e)}), 500
+
+
+
 
 @app.route('/summarize', methods=['POST'])
 def summarize():
