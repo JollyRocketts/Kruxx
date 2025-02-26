@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 // import axios from 'axios';
 
+import { AiFillSound } from "react-icons/ai";
+import { Volume2 } from "lucide-react";
+
+
 const UploadImage = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -49,6 +53,27 @@ const UploadImage = () => {
       console.error('Error:', error);
     }
   };
+
+
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  
+    const handleSpeak = () => {
+      if (!summary) return;
+      const synth = window.speechSynthesis;
+      const utterance = new SpeechSynthesisUtterance(summary);
+  
+      // Stop previous speech if already speaking
+      if (isSpeaking) {
+        synth.cancel();
+        setIsSpeaking(false);
+        return;
+      }
+  
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+  
+      synth.speak(utterance);
+    };
 
   return (
     <div className="relative bg-orange-400 flex flex-col justify-center items-center text-white text-center pt-24 pb-56 m-5 rounded-xl">
@@ -200,6 +225,12 @@ const UploadImage = () => {
               readOnly
               placeholder="Summary will appear here..."
               ></textarea>
+              {/* <button style={{ border: "1px solid red" }}>Test Button</button> */}
+              <button onClick={handleSpeak} className=" ml-4 p-6 rounded-full bg-white-200 hover:bg-gray-100 transition">
+                {/* <AiFillSound className={`w-6 h-6 ${isSpeaking ? "text-blue-500" : "text-black"}`} /> */}
+                <Volume2 className={`w-6 h-6 ${isSpeaking ? "text-blue-500" : "text-black"}`} />
+        
+              </button>
           </div>
         </main>
       )}

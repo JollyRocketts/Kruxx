@@ -10,10 +10,14 @@ from youtube_transcript_api.formatters import TextFormatter
 from workers import txt2questions
 from pptx import Presentation
 
+from dotenv import load_dotenv
+
 app = Flask(__name__)
 CORS(app)
+load_dotenv()
 
-app.secret_key = "secret_key"
+app.secret_key = os.getenv('secret_key')
+# print(app.secret_key)
 
 bart_summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 bert_summarizer = pipeline("summarization", model="bert-base-uncased")

@@ -2,6 +2,9 @@ import React, { useState } from "react";
 import { FaYoutube, FaLink } from "react-icons/fa"; // Icons for YouTube and Hyperlink
 import { Link } from "react-router-dom";
 
+// import { Volume2 } from "lucide-react";
+import { AiFillSound } from "react-icons/ai";
+
 const Hero = () => {
   const [mode, setMode] = useState("youtube"); // State for toggle button
   const [inputValue, setInputValue] = useState("");
@@ -58,6 +61,29 @@ const Hero = () => {
     // Close the modal after summarization
     setShowModal(false);
   };
+
+
+
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const handleSpeak = () => {
+    if (!summaryResult) return;
+    const synth = window.speechSynthesis;
+    const utterance = new SpeechSynthesisUtterance(summaryResult);
+
+    // Stop previous speech if already speaking
+    if (isSpeaking) {
+      synth.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+
+    synth.speak(utterance);
+  };
+
 
   return (
     <header className="bg-orange-400 flex justify-center items-center text-white text-center pt-24 pb-56 m-5 rounded-xl">
@@ -218,10 +244,27 @@ const Hero = () => {
 
         {/* Display the generated summary here */}
         {summaryResult && (
+          <main>
           <div className="mt-8 p-4 border rounded-lg shadow-md bg-white text-black max-w-2xl mx-auto">
             <h3 className="font-semibold text-xl mb-4">Generated Summary:</h3>
             <p>{summaryResult}</p>
+
+            <button> Click Me</button>
+
+            <button style={{ border: "1px solid red" }}>Test Button</button>
+            <button style={{ display: "block", border: "2px solid red", padding: "10px" }}>
+  Debug Button
+</button>
+
+
+            <button
+            onClick={handleSpeak}
+            className="ml-4 p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition"
+            >
+            <AiFillSound className={`w-6 h-6 ${isSpeaking ? "text-blue-500" : "text-black"}`} />
+            </button>
           </div>
+          </main>
         )}
       </div>
     </header>
