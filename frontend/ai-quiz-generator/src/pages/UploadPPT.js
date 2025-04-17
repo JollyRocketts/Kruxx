@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute } from "react-icons/fa";
+import Translation from '../components/Translation';
 
 function UploadPPT() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -7,9 +9,17 @@ function UploadPPT() {
   const [selectedOption2, setSelectedOption2] = useState("abstractive");
   const [selectedOption3, setSelectedOption3] = useState("short");
   const [message, setMessage] = useState('');
-  const [summary, setSummary] = useState('');  // State to store summary text
-  const [quizMessage, setQuizMessage] = useState('');  // State for quiz generation message
-  const [quizGenerated, setQuizGenerated] = useState(false);  // State to track if quiz is generated
+  const [summary, setSummary] = useState('');
+  const [quizMessage, setQuizMessage] = useState('');
+  const [quizGenerated, setQuizGenerated] = useState(false);
+  const [translatedText, setTranslatedText] = useState('');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [speech, setSpeech] = useState(null);
+  const [volume, setVolume] = useState(1);
+  const [rate, setRate] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
   const navigate = useNavigate();
 
   const handlePPTUpload = (event) => {
@@ -40,7 +50,6 @@ function UploadPPT() {
       const data = await response.json();
 
       if (data.success) {
-        // Set the summary text from the response
         setSummary(data.summary);
       } else {
         setMessage(data.message || 'An error occurred while uploading the PPT.');
@@ -81,8 +90,56 @@ function UploadPPT() {
     }
   };
 
+  const handleSpeak = () => {
+    const synth = window.speechSynthesis;
+    const textToSpeak = translatedText || summary;
+
+    if (!isPlaying) {
+      if (isPaused && speech) {
+        synth.resume();
+        setIsPlaying(true);
+        setIsPaused(false);
+      } else {
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = currentLanguage;
+        utterance.rate = rate;
+        utterance.volume = isMuted ? 0 : volume;
+        
+        utterance.onend = () => {
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        utterance.onerror = (event) => {
+          console.error('Speech synthesis error:', event);
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        setSpeech(utterance);
+        synth.speak(utterance);
+        setIsPlaying(true);
+        setIsPaused(false);
+      }
+    } else {
+      synth.pause();
+      setIsPlaying(false);
+      setIsPaused(true);
+    }
+  };
+
+  const handleStop = () => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setSpeech(null);
+  };
+
   return (
-    <>
+    <div className="min-h-screen bg-orange-400 py-6 flex flex-col justify-center sm:py-12">
       <div className="relative bg-orange-400 flex flex-col justify-center items-center text-white text-center pt-24 pb-56 m-5 rounded-xl">
         <div className="w-[60%] flex flex-col justify-center items-center space-y-6">
           <h2 className="text-2xl font-bold">Upload a Presentation</h2>
@@ -135,7 +192,7 @@ function UploadPPT() {
             </div>
           </div>
 
-          <div className="w-full flex flex-col items-center justify-start space-y-3">
+          <div className="w-full flex flex-col items-center justify-start">
             <div>
               <p className="text-lg font-semibold">Choose Summary Length:</p>
               <label className="flex items-center space-x-2">
@@ -197,27 +254,81 @@ function UploadPPT() {
             </p>
           )}
         </div>
-        <div className='w-full'>
+        <div className="w-full">
+        {summary && (
+          <main className="py-10">
+            <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
+              <textarea
+                className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
+                value={translatedText || summary}
+                readOnly
+                placeholder="Summary will appear here..."
+              />
+              <div className="flex flex-col items-center gap-4 mt-4">
+                <Translation 
+                  text={summary}
+                  onTranslate={setTranslatedText}
+                  onLanguageChange={setCurrentLanguage}
+                />
+                
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleSpeak}
+                    className="flex items-center gap-2 bg-orange-400 text-white px-4 py-2 rounded-md hover:bg-orange-500 transition-colors"
+                  >
+                    {isPlaying ? <FaPause className="text-lg" /> : <FaPlay className="text-lg" />}
+                    {isPlaying ? 'Pause' : (isPaused ? 'Resume' : 'Listen')}
+                  </button>
+                  {(isPlaying || isPaused) && (
+                    <button
+                      onClick={handleStop}
+                      className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors"
+                    >
+                      <FaStop className="text-lg" />
+                      Stop
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="flex items-center gap-2 bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
+                  >
+                    {isMuted ? <FaVolumeMute className="text-lg" /> : <FaVolumeUp className="text-lg" />}
+                  </button>
+                </div>
 
-          {/* Display the summary box if summary is available */}
-          {summary && (
-            <main className="py-10">
-              <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
-                <textarea
-                  className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
-                  value={summary}
-                  readOnly
-                  placeholder="Summary will appear here..."
-                ></textarea>
+                <div className="flex items-center gap-4 w-full max-w-md">
+                  <div className="flex flex-col items-center gap-2 w-1/2">
+                    <label className="text-sm text-gray-600">Volume</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={volume}
+                      onChange={(e) => setVolume(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex flex-col items-center gap-2 w-1/2">
+                    <label className="text-sm text-gray-600">Speed</label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2"
+                      step="0.1"
+                      value={rate}
+                      onChange={(e) => setRate(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
               </div>
-            </main>
-          )}
-        </div>
-
-        {/* Display message if there's an error or no file uploaded */}
-        {message && <p className="text-red-500 mt-4">{message}</p>}
+            </div>
+          </main>
+        )}
       </div>
-    </>
+      </div>
+    </div>
   );
 }
 

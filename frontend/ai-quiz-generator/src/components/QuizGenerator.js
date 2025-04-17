@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute } from "react-icons/fa";
+import Translation from './Translation';
 
 const QuizGenerator = () => {
   const [inputText, setInputText] = useState("");
@@ -7,7 +9,34 @@ const QuizGenerator = () => {
   const [summarizationType, setSummarizationType] = useState("abstractive");
   const [summaryLength, setSummaryLength] = useState("short"); // Default to short
   const [summaryResult, setSummaryResult] = useState(""); // To display the summary
+  const [translatedText, setTranslatedText] = useState('');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizResults, setQuizResults] = useState(null);
+  const [userAnswers, setUserAnswers] = useState({});
   const navigate = useNavigate();
+
+  // Add text-to-speech states
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [speech, setSpeech] = useState(null);
+  const [volume, setVolume] = useState(1);
+  const [rate, setRate] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Initialize speech synthesis
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
+
+  // Update utterance text when summary changes
+  useEffect(() => {
+    if (speech && summaryResult) {
+      speech.text = summaryResult;
+    }
+  }, [summaryResult, speech]);
 
   const handleSummarizeClick = () => {
     setShowModal(true); // Show the modal when "Summarize" button is clicked
@@ -68,7 +97,13 @@ const QuizGenerator = () => {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        navigate("/quiz");
+        // Pass the quiz state through navigation
+        navigate("/quiz", { 
+          state: { 
+            showAnswers: true,
+            fromGenerator: true
+          } 
+        });
       } else {
         alert(data.message || "Failed to generate quiz.");
       }
@@ -76,6 +111,54 @@ const QuizGenerator = () => {
       console.error("Error generating quiz:", error);
       alert("An error occurred while generating the quiz. Please try again.");
     }
+  };
+
+  const handleSpeak = () => {
+    const synth = window.speechSynthesis;
+    const textToSpeak = translatedText || summaryResult;
+
+    if (!isPlaying) {
+      if (isPaused && speech) {
+        synth.resume();
+        setIsPlaying(true);
+        setIsPaused(false);
+      } else {
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = currentLanguage;
+        utterance.rate = rate;
+        utterance.volume = isMuted ? 0 : volume;
+        
+        utterance.onend = () => {
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        utterance.onerror = (event) => {
+          console.error('Speech synthesis error:', event);
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        setSpeech(utterance);
+        synth.speak(utterance);
+        setIsPlaying(true);
+        setIsPaused(false);
+      }
+    } else {
+      synth.pause();
+      setIsPlaying(false);
+      setIsPaused(true);
+    }
+  };
+
+  const handleStop = () => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setSpeech(null);
   };
 
   return (
@@ -198,10 +281,75 @@ const QuizGenerator = () => {
 
       {/* Display the generated summary here */}
       {summaryResult && (
-        <div className="mt-8 p-4 border rounded-lg shadow-md bg-white text-black max-w-2xl mx-auto">
-          <h3 className="font-semibold text-xl mb-4">Generated Summary:</h3>
-          <p>{summaryResult}</p>
-        </div>
+        <main className="py-10 w-full">
+          <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
+            <textarea
+              className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
+              value={translatedText || summaryResult}
+              readOnly
+              placeholder="Summary will appear here..."
+            />
+            <div className="flex flex-col items-center gap-4 mt-4">
+              <Translation 
+                text={summaryResult}
+                onTranslate={setTranslatedText}
+                onLanguageChange={setCurrentLanguage}
+              />
+              
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleSpeak}
+                  className="flex items-center gap-2 bg-orange-400 text-white px-4 py-2 rounded-md hover:bg-orange-500 transition-colors"
+                >
+                  {isPlaying ? <FaPause className="text-lg" /> : <FaPlay className="text-lg" />}
+                  {isPlaying ? 'Pause' : (isPaused ? 'Resume' : 'Listen')}
+                </button>
+                {(isPlaying || isPaused) && (
+                  <button
+                    onClick={handleStop}
+                    className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors"
+                  >
+                    <FaStop className="text-lg" />
+                    Stop
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsMuted(!isMuted)}
+                  className="flex items-center gap-2 bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
+                >
+                  {isMuted ? <FaVolumeMute className="text-lg" /> : <FaVolumeUp className="text-lg" />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4 w-full max-w-md">
+                <div className="flex flex-col items-center gap-2 w-1/2">
+                  <label className="text-sm text-gray-600">Volume</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={volume}
+                    onChange={(e) => setVolume(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex flex-col items-center gap-2 w-1/2">
+                  <label className="text-sm text-gray-600">Speed</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={rate}
+                    onChange={(e) => setRate(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
       )}
     </main>
   );

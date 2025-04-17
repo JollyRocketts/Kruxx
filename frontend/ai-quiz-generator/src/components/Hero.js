@@ -1,9 +1,8 @@
-import React, { useState } from "react";
-import { FaYoutube, FaLink } from "react-icons/fa"; // Icons for YouTube and Hyperlink
+import React, { useState, useEffect } from "react";
+import { FaYoutube, FaLink, FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute } from "react-icons/fa"; // Icons for YouTube and Hyperlink
 import { Link } from "react-router-dom";
-
-// import { Volume2 } from "lucide-react";
-import { AiFillSound } from "react-icons/ai";
+import TextToSpeech from './TextToSpeech';
+import Translation from './Translation';
 
 const Hero = () => {
   const [mode, setMode] = useState("youtube"); // State for toggle button
@@ -12,6 +11,32 @@ const Hero = () => {
   const [summarizationType, setSummarizationType] = useState("abstractive");
   const [summaryLength, setSummaryLength] = useState("short"); // Default to short
   const [summaryResult, setSummaryResult] = useState(""); // To store the generated summary
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [speech, setSpeech] = useState(null);
+  const [volume, setVolume] = useState(1);
+  const [rate, setRate] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [translatedText, setTranslatedText] = useState('');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+
+  // Initialize speech synthesis
+  useEffect(() => {
+    const synth = window.speechSynthesis;
+    const u = new SpeechSynthesisUtterance();
+    setSpeech(u);
+
+    return () => {
+      synth.cancel();
+    };
+  }, []);
+
+  // Update utterance text when summary changes
+  useEffect(() => {
+    if (speech && summaryResult) {
+      speech.text = summaryResult;
+    }
+  }, [summaryResult, speech]);
 
   // Toggle between YouTube and Website modes
   const toggleMode = () => {
@@ -31,12 +56,35 @@ const Hero = () => {
   };
 
   const handleSummarize = async () => {
+    // Validate input URL
+    if (!inputValue) {
+      alert("Please enter a URL");
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(inputValue);
+    } catch (e) {
+      alert("Please enter a valid URL");
+      return;
+    }
+
     // Check whether the input is a YouTube URL or a website link
-    const isYoutube = mode === "youtube";
+    const isYoutube = mode === "youtube" && 
+      (inputValue.includes("youtube.com") || inputValue.includes("youtu.be"));
+    
+    const isWebsite = mode === "website" && 
+      !inputValue.includes("youtube.com") && !inputValue.includes("youtu.be");
+
+    if ((mode === "youtube" && !isYoutube) || (mode === "website" && !isWebsite)) {
+      alert(`Please enter a valid ${mode === "youtube" ? "YouTube" : "website"} URL`);
+      return;
+    }
 
     try {
-      const endpoint = isYoutube ? "/video-upload" : "/link-upload"; // Choose route based on input type
-      const response = await fetch(endpoint, {
+      const endpoint = isYoutube ? "/video-upload" : "/link-upload";
+      const response = await fetch(`http://localhost:5000${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -49,41 +97,91 @@ const Hero = () => {
       });
 
       const data = await response.json();
-      if (response.ok) {
-        setSummaryResult(data.summary); // Display the result in the bottom box
+      
+      if (data.success) {
+        setSummaryResult(data.summary);
       } else {
         alert(data.message || "Error generating summary");
       }
     } catch (error) {
-      alert("Please make sure you've selected the correct link type.");
+      console.error("Error:", error);
+      alert("An error occurred while processing your request. Please try again.");
     }
 
-    // Close the modal after summarization
+    // Close the modal after summarization attempt
     setShowModal(false);
   };
 
-
-
-  const [isSpeaking, setIsSpeaking] = useState(false);
-
   const handleSpeak = () => {
-    if (!summaryResult) return;
     const synth = window.speechSynthesis;
-    const utterance = new SpeechSynthesisUtterance(summaryResult);
+    const textToSpeak = translatedText || summaryResult;
 
-    // Stop previous speech if already speaking
-    if (isSpeaking) {
-      synth.cancel();
-      setIsSpeaking(false);
-      return;
+    if (!isPlaying) {
+      if (isPaused && speech) {
+        synth.resume();
+        setIsPlaying(true);
+        setIsPaused(false);
+      } else {
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = currentLanguage;
+        utterance.rate = rate;
+        utterance.volume = isMuted ? 0 : volume;
+        
+        utterance.onend = () => {
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        utterance.onerror = (event) => {
+          console.error('Speech synthesis error:', event);
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        setSpeech(utterance);
+        synth.speak(utterance);
+        setIsPlaying(true);
+        setIsPaused(false);
+      }
+    } else {
+      synth.pause();
+      setIsPlaying(false);
+      setIsPaused(true);
     }
-
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-
-    synth.speak(utterance);
   };
 
+  const handleStop = () => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setSpeech(null);
+  };
+
+  const handleMute = () => {
+    setIsMuted(!isMuted);
+    if (speech) {
+      speech.volume = !isMuted ? 0 : volume;
+    }
+  };
+
+  const handleVolumeChange = (e) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+    if (speech) {
+      speech.volume = isMuted ? 0 : newVolume;
+    }
+  };
+
+  const handleRateChange = (e) => {
+    const newRate = parseFloat(e.target.value);
+    setRate(newRate);
+    if (speech) {
+      speech.rate = newRate;
+    }
+  };
 
   return (
     <header className="bg-orange-400 flex justify-center items-center text-white text-center pt-24 pb-56 m-5 rounded-xl">
@@ -105,7 +203,7 @@ const Hero = () => {
               Upload PDF
             </button>
           </Link>
-          <Link to="/uploadPPT">
+          <Link to="/uploadPpt">
             <button className="bg-white text-black font-bold py-6 px-10 rounded-xl shadow-md hover:bg-gray-200 text-lg">
               Upload PPT
             </button>
@@ -244,26 +342,74 @@ const Hero = () => {
 
         {/* Display the generated summary here */}
         {summaryResult && (
-          <main>
-          <div className="mt-8 p-4 border rounded-lg shadow-md bg-white text-black max-w-2xl mx-auto">
-            <h3 className="font-semibold text-xl mb-4">Generated Summary:</h3>
-            <p>{summaryResult}</p>
+          <main className="py-10 w-full">
+            <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
+              <textarea
+                className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
+                value={translatedText || summaryResult}
+                readOnly
+                placeholder="Summary will appear here..."
+              />
+              <div className="flex flex-col items-center gap-4 mt-4">
+                <Translation 
+                  text={summaryResult}
+                  onTranslate={setTranslatedText}
+                  onLanguageChange={setCurrentLanguage}
+                />
+                
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleSpeak}
+                    className="flex items-center gap-2 bg-orange-400 text-white px-4 py-2 rounded-md hover:bg-orange-500 transition-colors"
+                  >
+                    {isPlaying ? <FaPause className="text-lg" /> : <FaPlay className="text-lg" />}
+                    {isPlaying ? 'Pause' : (isPaused ? 'Resume' : 'Listen')}
+                  </button>
+                  {(isPlaying || isPaused) && (
+                    <button
+                      onClick={handleStop}
+                      className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors"
+                    >
+                      <FaStop className="text-lg" />
+                      Stop
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="flex items-center gap-2 bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
+                  >
+                    {isMuted ? <FaVolumeMute className="text-lg" /> : <FaVolumeUp className="text-lg" />}
+                  </button>
+                </div>
 
-            <button> Click Me</button>
-
-            <button style={{ border: "1px solid red" }}>Test Button</button>
-            <button style={{ display: "block", border: "2px solid red", padding: "10px" }}>
-  Debug Button
-</button>
-
-
-            <button
-            onClick={handleSpeak}
-            className="ml-4 p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition"
-            >
-            <AiFillSound className={`w-6 h-6 ${isSpeaking ? "text-blue-500" : "text-black"}`} />
-            </button>
-          </div>
+                <div className="flex items-center gap-4 w-full max-w-md">
+                  <div className="flex flex-col items-center gap-2 w-1/2">
+                    <label className="text-sm text-gray-600">Volume</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={volume}
+                      onChange={(e) => setVolume(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex flex-col items-center gap-2 w-1/2">
+                    <label className="text-sm text-gray-600">Speed</label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2"
+                      step="0.1"
+                      value={rate}
+                      onChange={(e) => setRate(parseFloat(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </main>
         )}
       </div>

@@ -9,8 +9,10 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
 from workers import txt2questions
 from pptx import Presentation
-
 from dotenv import load_dotenv
+from googletrans import Translator
+from bs4 import BeautifulSoup
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -725,81 +727,140 @@ def success():
             return render_template("ack.html", message=message)
 
 
+def extract_readable_text(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Remove script and style elements
+    for script in soup(["script", "style", "header", "footer", "nav"]):
+        script.decompose()
+    
+    # Get text and remove extra whitespace
+    text = soup.get_text(separator=' ')
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    text = ' '.join(lines)
+    
+    # Remove multiple spaces and special characters
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[^\w\s.,!?-]', '', text)
+    
+    return text.strip()
+
 @app.route('/link-upload', methods=['POST'])
 def link_upload():
-    # Parse incoming JSON data
-    data = request.get_json()
-    link = data['link']
-    summary_type = data['summary_type']
-    summary_length = data['summary_length']
-
-    response = requests.get(link)
-    
-    # Validate input
-    if not link:
-        return jsonify({"message": "Link is required."}), 400
-
-    html_filename = "downloaded_link.html"
-    with open(html_filename, "w", encoding="utf-8") as html_file:
-        html_file.write(response.text)
-    
-    # Process the saved HTML file with Textract
-    extracted_text = textract.process(html_filename, method='html').decode('utf-8')
-    text_filename = "link_extracted_text.txt"
-    with open(text_filename, "w", encoding="utf-8") as text_file:
-        text_file.write(extracted_text)
-
-
-    max_input_length = 512
-
-    if summary_length == 'short':
-        max_output_length = 50
-    elif summary_length == 'medium':
-        max_output_length = 130
-    elif summary_length == 'long':
-        max_output_length = 250
-    else:
-        max_output_length = 130
-
-    truncated_text = extracted_text[:max_input_length]
-
     try:
-        if summary_type == 'abstractive':
-            summary = bart_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
-        elif summary_type == 'extractive':
-            summary = bert_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+        # Parse incoming JSON data
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data received"}), 400
+            
+        link = data.get('link')
+        summary_type = data.get('summary_type')
+        summary_length = data.get('summary_length')
+
+        # Validate input
+        if not link:
+            return jsonify({"success": False, "message": "Link is required."}), 400
+        if not summary_type:
+            summary_type = 'abstractive'  # default value
+        if not summary_length:
+            summary_length = 'medium'  # default value
+
+        try:
+            # Make request to get the webpage content
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            response = requests.get(link, headers=headers, timeout=10)
+            response.raise_for_status()  # Raise an exception for bad status codes
+        except requests.RequestException as e:
+            return jsonify({"success": False, "message": f"Error fetching website: {str(e)}"}), 400
+
+        # Extract readable content from HTML
+        try:
+            extracted_text = extract_readable_text(response.text)
+            if not extracted_text:
+                return jsonify({"success": False, "message": "Could not extract readable content from the webpage"}), 400
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Error extracting text: {str(e)}"}), 400
+
+        text_filename = "link_extracted_text.txt"
+        with open(text_filename, "w", encoding="utf-8") as text_file:
+            text_file.write(extracted_text)
+
+        max_input_length = 512
+
+        if summary_length == 'short':
+            max_output_length = 50
+        elif summary_length == 'medium':
+            max_output_length = 130
+        elif summary_length == 'long':
+            max_output_length = 250
         else:
-            summary = "Invalid summary type selected."
+            max_output_length = 130
 
-        summary_filename = f"{html_filename}_summary.txt"
-        
-        with open(summary_filename, 'w', encoding="utf-8") as summary_file:
-            summary_file.write(summary)
+        truncated_text = extracted_text[:max_input_length]
 
-        message = f"Summary generated and saved to {summary_filename} using {summary_type.upper()} with {summary_length} length."
-        return jsonify(success=True, message=message, summary=summary)  # Send summary to frontend
+        try:
+            if summary_type == 'abstractive':
+                summary = bart_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+            elif summary_type == 'extractive':
+                summary = bert_summarizer(truncated_text, max_length=max_output_length, min_length=max_output_length // 2, do_sample=False)[0]['summary_text']
+            else:
+                summary = "Invalid summary type selected."
+
+            summary_filename = "webpage_summary.txt"
+            
+            with open(summary_filename, 'w', encoding="utf-8") as summary_file:
+                summary_file.write(summary)
+
+            return jsonify({
+                "success": True, 
+                "message": f"Summary generated successfully", 
+                "summary": summary
+            })
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Error during summarization: {str(e)}"}), 400
+
     except Exception as e:
-        return jsonify(success=False, message=f"Error during summarization: {e}")
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
 
 @app.route("/video-upload", methods=["POST"])
 def video_upload():
-    data = request.get_json()
-    video_url = data.get("link")
-    video_id = video_url.split('v=')[-1]
-    summary_type = data.get("summary_type")
-    summary_length = data.get("summary_length")
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data received"}), 400
 
-    if video_url:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        formatter = TextFormatter()
-        formatted_transcript = formatter.format_transcript(transcript)
+        video_url = data.get("link")
+        if not video_url:
+            return jsonify({"success": False, "message": "Video URL is required"}), 400
+
+        summary_type = data.get("summary_type", 'abstractive')
+        summary_length = data.get("summary_length", 'medium')
+
+        # Extract video ID from URL
+        try:
+            if "youtube.com" in video_url:
+                video_id = video_url.split('v=')[-1].split('&')[0]
+            elif "youtu.be" in video_url:
+                video_id = video_url.split('/')[-1].split('?')[0]
+            else:
+                return jsonify({"success": False, "message": "Invalid YouTube URL format"}), 400
+        except Exception:
+            return jsonify({"success": False, "message": "Could not extract video ID from URL"}), 400
+
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            formatter = TextFormatter()
+            formatted_transcript = formatter.format_transcript(transcript)
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Error fetching transcript: {str(e)}"}), 400
         
         transcript_filename = f"{video_id}_transcript.txt"
         with open(transcript_filename, 'w', encoding="utf-8") as transcript_file:
             transcript_file.write(formatted_transcript)
-            
 
         # Process the transcript to summarize
         max_input_length = 512
@@ -828,12 +889,16 @@ def video_upload():
             with open(summary_filename, 'w', encoding="utf-8") as summary_file:
                 summary_file.write(summary)
 
-            message = f"Summary generated and saved to {summary_filename} using {summary_type.upper()} with {summary_length} length."
-            return jsonify(success=True, message=message, summary=summary)
+            return jsonify({
+                "success": True,
+                "message": "Summary generated successfully",
+                "summary": summary
+            })
         except Exception as e:
-            return jsonify(success=False, message=f"Error during summarization: {e}")
+            return jsonify({"success": False, "message": f"Error during summarization: {str(e)}"}), 400
 
-    return jsonify({"message": "No video link provided."}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
 @app.route("/txt-summarize", methods=["POST"])
@@ -976,6 +1041,32 @@ def result():
         "total": len(questions),
     })
 
+
+@app.route('/translate', methods=['POST'])
+def translate():
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        target_language = data.get('target_language', 'en')
+
+        if not text:
+            return jsonify({
+                "success": False,
+                "message": "No text provided for translation"
+            }), 400
+
+        translator = Translator()
+        translated = translator.translate(text, dest=target_language)
+
+        return jsonify({
+            "success": True,
+            "translated_text": translated.text
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Translation error: {str(e)}"
+        }), 500
 
 
 if __name__ == '__main__':

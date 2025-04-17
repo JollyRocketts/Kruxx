@@ -100,32 +100,6 @@ function QuizPage() {
                 </h4>
                 <div className="options">
                   {questionData.options.map((option, optionIndex) => (
-
-
-
-// <div
-//                     key={optionIndex}
-//                     onChange={() => {
-//                               handleAnswerChange(questionNumber, option);
-//                               setSelected(optionIndex);
-//                             }}
-//                     className={`
-//                       p-3 rounded-lg transition-all duration-200 ease-in-out cursor-pointer
-//                       ${selected === optionIndex 
-//                         ? 'bg-orange-500 text-white' 
-//                         : 'bg-orange-100 text-gray-800 hover:bg-orange-200'}
-//                     `}
-//                     >
-//                     <span className="mr-2">
-//                       {selected === optionIndex ? '✓' : '○'}
-//                     </span>
-//                     {option}
-//                   </div>
-//                   ))}
-//                 </div>
-
-
-
                     <div key={optionIndex} className="option mt-2">
                       <label className="flex items-center space-x-2">
                         <input
@@ -159,10 +133,65 @@ function QuizPage() {
         {/* Display Results */}
         {result && (
           <section className="result mt-8">
-            <h3 className="text-2xl font-bold text-center text-white">You got {result.correct} out of {result.total} correct!</h3>
-            {/* <p className="text-lg text-center mt-4 text-white">
-              You got {result.correct} out of {result.total} correct!
-            </p> */}
+            <div className="bg-white p-6 rounded-xl mb-8 text-center">
+              <h3 className="text-2xl font-bold text-orange-500 mb-4">Quiz Results</h3>
+              <p className="text-xl font-bold">
+                You got {result.correct} out of {result.total} correct!
+              </p>
+              <p className="text-lg mt-2">
+                Percentage: {((result.correct / result.total) * 100).toFixed(1)}%
+              </p>
+            </div>
+
+            {/* Display Questions with Correct Answers */}
+            <div className="space-y-6">
+              {Object.entries(questions).map(([questionNumber, questionData], index) => (
+                <div key={questionNumber} className="bg-white rounded-xl p-6">
+                  <h4 className="font-semibold mb-4">
+                    {index + 1}. {questionData.question}
+                  </h4>
+                  <div className="space-y-2">
+                    {questionData.options.map((option, optionIndex) => {
+                      const isUserAnswer = answers[questionNumber] === option;
+                      const isCorrectAnswer = questionData.answer === option;
+                      
+                      return (
+                        <div
+                          key={optionIndex}
+                          className={`p-3 rounded-lg ${
+                            isCorrectAnswer 
+                              ? 'bg-green-200 border-2 border-green-500'
+                              : isUserAnswer && !isCorrectAnswer
+                              ? 'bg-red-200 border-2 border-red-500'
+                              : 'bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span>{option}</span>
+                            {isCorrectAnswer && (
+                              <span className="text-green-600 font-semibold">✓ Correct Answer</span>
+                            )}
+                            {isUserAnswer && !isCorrectAnswer && (
+                              <span className="text-red-600 font-semibold">✗ Your Answer</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Back to Home Button */}
+            <div className="flex justify-center mt-8">
+              <a 
+                href="/"
+                className="bg-white text-black px-6 py-2 rounded-lg hover:bg-gray-100 font-bold"
+              >
+                Back to Home
+              </a>
+            </div>
           </section>
         )}
       </section>

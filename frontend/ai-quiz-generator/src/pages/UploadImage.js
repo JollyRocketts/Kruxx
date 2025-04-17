@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 // import axios from 'axios';
-
-import { AiFillSound } from "react-icons/ai";
-import { Volume2 } from "lucide-react";
-
+import TextToSpeech from '../components/TextToSpeech';
+import Translation from '../components/Translation';
+import { FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute } from "react-icons/fa";
 
 const UploadImage = () => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -13,6 +12,14 @@ const UploadImage = () => {
   const [selectedOption3, setSelectedOption3] = useState('short');
   const [message, setMessage] = useState('');
   const [summary, setSummary] = useState('');  // State to store summary text
+  const [translatedText, setTranslatedText] = useState('');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [speech, setSpeech] = useState(null);
+  const [volume, setVolume] = useState(1);
+  const [rate, setRate] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
 
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
@@ -54,26 +61,53 @@ const UploadImage = () => {
     }
   };
 
+  const handleSpeak = () => {
+    const synth = window.speechSynthesis;
+    const textToSpeak = translatedText || summary;
 
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  
-    const handleSpeak = () => {
-      if (!summary) return;
-      const synth = window.speechSynthesis;
-      const utterance = new SpeechSynthesisUtterance(summary);
-  
-      // Stop previous speech if already speaking
-      if (isSpeaking) {
-        synth.cancel();
-        setIsSpeaking(false);
-        return;
+    if (!isPlaying) {
+      if (isPaused && speech) {
+        synth.resume();
+        setIsPlaying(true);
+        setIsPaused(false);
+      } else {
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = currentLanguage;
+        utterance.rate = rate;
+        utterance.volume = isMuted ? 0 : volume;
+        
+        utterance.onend = () => {
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        utterance.onerror = (event) => {
+          console.error('Speech synthesis error:', event);
+          setIsPlaying(false);
+          setIsPaused(false);
+          setSpeech(null);
+        };
+
+        setSpeech(utterance);
+        synth.speak(utterance);
+        setIsPlaying(true);
+        setIsPaused(false);
       }
-  
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-  
-      synth.speak(utterance);
-    };
+    } else {
+      synth.pause();
+      setIsPlaying(false);
+      setIsPaused(true);
+    }
+  };
+
+  const handleStop = () => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    setIsPlaying(false);
+    setIsPaused(false);
+    setSpeech(null);
+  };
 
   return (
     <div className="relative bg-orange-400 flex flex-col justify-center items-center text-white text-center pt-24 pb-56 m-5 rounded-xl">
@@ -221,16 +255,68 @@ const UploadImage = () => {
           <div className="w-2/4 h-96 mx-auto bg-white shadow-lg rounded-lg p-12 flex flex-col justify-center items-center">
             <textarea
               className="w-full border border-gray-300 rounded-md p-4 w-full h-full text-lg resize-none text-black"
-              value={summary}
+              value={translatedText || summary}
               readOnly
               placeholder="Summary will appear here..."
-              ></textarea>
-              {/* <button style={{ border: "1px solid red" }}>Test Button</button> */}
-              <button onClick={handleSpeak} className=" ml-4 p-6 rounded-full bg-white-200 hover:bg-gray-100 transition">
-                {/* <AiFillSound className={`w-6 h-6 ${isSpeaking ? "text-blue-500" : "text-black"}`} /> */}
-                <Volume2 className={`w-6 h-6 ${isSpeaking ? "text-blue-500" : "text-black"}`} />
-        
-              </button>
+            />
+            <div className="flex flex-col items-center gap-4 mt-4">
+              <Translation 
+                text={summary} 
+                onTranslate={setTranslatedText} 
+                onLanguageChange={setCurrentLanguage}
+              />
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleSpeak}
+                  className="flex items-center gap-2 bg-orange-400 text-white px-4 py-2 rounded-md hover:bg-orange-500 transition-colors"
+                >
+                  {isPlaying ? <FaPause className="text-lg" /> : <FaPlay className="text-lg" />}
+                  {isPlaying ? 'Pause' : (isPaused ? 'Resume' : 'Listen')}
+                </button>
+                {(isPlaying || isPaused) && (
+                  <button
+                    onClick={handleStop}
+                    className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 transition-colors"
+                  >
+                    <FaStop className="text-lg" />
+                    Stop
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsMuted(!isMuted)}
+                  className="flex items-center gap-2 bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
+                >
+                  {isMuted ? <FaVolumeMute className="text-lg" /> : <FaVolumeUp className="text-lg" />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4 w-full max-w-md">
+                <div className="flex flex-col items-center gap-2 w-1/2">
+                  <label className="text-sm text-gray-600">Volume</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={volume}
+                    onChange={(e) => setVolume(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex flex-col items-center gap-2 w-1/2">
+                  <label className="text-sm text-gray-600">Speed</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={rate}
+                    onChange={(e) => setRate(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </main>
       )}
