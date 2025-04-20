@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { FaYoutube, FaLink, FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute } from "react-icons/fa"; // Icons for YouTube and Hyperlink
 import { Link } from "react-router-dom";
-import TextToSpeech from './TextToSpeech';
 import Translation from './Translation';
 
 const Hero = () => {
@@ -19,7 +18,40 @@ const Hero = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [translatedText, setTranslatedText] = useState('');
   const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [recommendedVideos, setRecommendedVideos] = useState([]);
+  const [recommendations, setRecommendations] = useState(false);
+  const [recommendationData, setRecommendationData] = useState([]);
+  const [showRecommendations, setShowRecommendations] = useState(false);
 
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      try {
+        const res = await fetch("/get_recommendations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ video: inputValue }), // pass the video URL here
+        });
+
+        const data = await res.json();
+        setRecommendationData(data.recommendedVideos); // make sure you're accessing the right key
+        setShowRecommendations(true);
+      } catch (err) {
+        console.error("Error fetching recommendations:", err);
+      }
+    };
+
+    if (recommendations) {
+      fetchRecommendations();
+    }
+  }, [recommendations]);
+
+  const formatDuration = (duration) => {
+    const minutes = Math.floor(duration / 60);
+    const seconds = duration % 60;
+    return `${minutes} min ${seconds} sec`;
+  };
   // Initialize speech synthesis
   useEffect(() => {
     const synth = window.speechSynthesis;
@@ -31,6 +63,7 @@ const Hero = () => {
     };
   }, []);
 
+
   // Update utterance text when summary changes
   useEffect(() => {
     if (speech && summaryResult) {
@@ -41,15 +74,45 @@ const Hero = () => {
   // Toggle between YouTube and Website modes
   const toggleMode = () => {
     setMode((prevMode) => (prevMode === "youtube" ? "website" : "youtube"));
+    setInputValue("");
+    setRecommendedVideos([]);
   };
 
   const handleInputChange = (e) => {
     setInputValue(e.target.value);
   };
-
-  const handleSummarizeClick = () => {
-    setShowModal(true); // Show the modal when "Summarize" button is clicked
+  const handleRecommendationsChange = (value) => {
+    setRecommendations(value);
   };
+  const handleSummarizeClick = async () => {
+    setShowModal(true);
+    try {
+      const response = await fetch("/video-upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          link: inputValue,
+          summarizationType: summarizationType,
+          summaryLength: summaryLength,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        summaryResult(result.summary);
+        setRecommendations(result.recommendations); // This will hold the recommended videos
+      } else {
+        console.error("Error summarizing:", result.message);
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    }
+  };
+
+
 
   const handleModalClose = () => {
     setShowModal(false); // Close the modal
@@ -71,10 +134,10 @@ const Hero = () => {
     }
 
     // Check whether the input is a YouTube URL or a website link
-    const isYoutube = mode === "youtube" && 
+    const isYoutube = mode === "youtube" &&
       (inputValue.includes("youtube.com") || inputValue.includes("youtu.be"));
-    
-    const isWebsite = mode === "website" && 
+
+    const isWebsite = mode === "website" &&
       !inputValue.includes("youtube.com") && !inputValue.includes("youtu.be");
 
     if ((mode === "youtube" && !isYoutube) || (mode === "website" && !isWebsite)) {
@@ -97,9 +160,10 @@ const Hero = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         setSummaryResult(data.summary);
+        setRecommendedVideos(data.recommendedVideos || []);
       } else {
         alert(data.message || "Error generating summary");
       }
@@ -126,7 +190,7 @@ const Hero = () => {
         utterance.lang = currentLanguage;
         utterance.rate = rate;
         utterance.volume = isMuted ? 0 : volume;
-        
+
         utterance.onend = () => {
           setIsPlaying(false);
           setIsPaused(false);
@@ -160,28 +224,6 @@ const Hero = () => {
     setSpeech(null);
   };
 
-  const handleMute = () => {
-    setIsMuted(!isMuted);
-    if (speech) {
-      speech.volume = !isMuted ? 0 : volume;
-    }
-  };
-
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-    if (speech) {
-      speech.volume = isMuted ? 0 : newVolume;
-    }
-  };
-
-  const handleRateChange = (e) => {
-    const newRate = parseFloat(e.target.value);
-    setRate(newRate);
-    if (speech) {
-      speech.rate = newRate;
-    }
-  };
 
   return (
     <header className="bg-orange-400 flex justify-center items-center text-white text-center pt-24 pb-56 m-5 rounded-xl">
@@ -241,11 +283,19 @@ const Hero = () => {
             <div className="flex justify-center">
               <button
                 onClick={handleSummarizeClick}
-                className="bg-black p-4 w-full max-w-md py-2 text-lg font-semibold rounded-full transition-all duration-300 ease-in-out transform hover:scale-105"
+                className="bg-black p-4 w-full max-w-md py-1 text-lg font-semibold rounded-full transition-all duration-300 ease-in-out transform hover:scale-105"
                 size="lg"
               >
                 Summarize
               </button>
+              {mode === 'youtube' && (
+                <button
+                  className="bg-black p-4 w-full max-w-md py-1 text-lg font-semibold rounded-full transition-all duration-300 ease-in-out transform hover:scale-105"
+                  onClick={() => handleRecommendationsChange(!recommendations)}
+                >
+                  {recommendations ? 'Hide Recommendations' : 'Show Recommendations'}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -351,12 +401,12 @@ const Hero = () => {
                 placeholder="Summary will appear here..."
               />
               <div className="flex flex-col items-center gap-4 mt-4">
-                <Translation 
+                <Translation
                   text={summaryResult}
                   onTranslate={setTranslatedText}
                   onLanguageChange={setCurrentLanguage}
                 />
-                
+
                 <div className="flex items-center gap-4">
                   <button
                     onClick={handleSpeak}
@@ -411,6 +461,69 @@ const Hero = () => {
               </div>
             </div>
           </main>
+        )}
+        {/* Recommendations Box */}
+        {recommendationData.length > 0 && (
+          <div>
+            <h3>Recommended Videos</h3>
+            <ul style={{ listStyleType: "none" }}>
+              {recommendationData.map((video, index) => (
+                <li
+                  key={index}
+                  style={{
+                    display: "flex",
+                    marginBottom: "20px",
+                    backgroundColor: "white", // Updated background color to white
+                    color: "black", // Text color set to black
+                    padding: "10px",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+                  }}
+                >
+                  {/* Video Thumbnail */}
+                  <div>
+                    <img
+                      src={video.thumbnail}
+                      alt={video.title}
+                      width="160"
+                      style={{
+                        borderRadius: "8px",
+                        boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+                      }}
+                    />
+                  </div>
+
+                  {/* Video Details on the Right Side */}
+                  <div style={{ flex: 1, paddingLeft: "20px" }}> {/* Added paddingLeft for spacing */}
+                    <p style={{ fontSize: "18px", fontWeight: "bold" }}>
+                      {video.title}
+                    </p>
+                    <p style={{ margin: "5px 0" }}>
+                      <strong>Length:</strong> {formatDuration(video.length)}
+                    </p>
+                    <p style={{ margin: "5px 0" }}>
+                      <strong>Channel:</strong> {video.channel}
+                    </p>
+                    <a
+                      href={`https://www.youtube.com/watch?v=${video.videoId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        textDecoration: "none",
+                        backgroundColor: "#007bff",
+                        color: "white",
+                        padding: "8px 16px",
+                        borderRadius: "4px",
+                        fontSize: "14px",
+                      }}
+                    >
+                      Watch Video
+                    </a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </header>

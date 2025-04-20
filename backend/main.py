@@ -12,6 +12,8 @@ from pptx import Presentation
 from dotenv import load_dotenv
 from googletrans import Translator
 from bs4 import BeautifulSoup
+from youtubesearchpython import VideosSearch
+from yt_dlp import YoutubeDL
 import re
 
 app = Flask(__name__)
@@ -888,11 +890,30 @@ def video_upload():
             
             with open(summary_filename, 'w', encoding="utf-8") as summary_file:
                 summary_file.write(summary)
+            try:
+                yt_info = YoutubeDL().extract_info(video_url, download=False)
+                title = yt_info.get("title", "")
+                search = VideosSearch(title, limit=6)
+                results = search.result()
 
+                recommendations = []
+                for video in results["result"]:
+                    if video["id"] != video_id:
+                        recommendations.append({
+                            "title": video["title"],
+                            "videoId": video["id"],
+                            "thumbnail": video["thumbnails"][0]["url"],
+                        })
+                        if len(recommendations) == 5:
+                            break
+            except Exception as e:
+                print("Error during recommendation:", e)
+                recommendations = []
             return jsonify({
                 "success": True,
                 "message": "Summary generated successfully",
-                "summary": summary
+                "summary": summary,
+                "recommendations": recommendations
             })
         except Exception as e:
             return jsonify({"success": False, "message": f"Error during summarization: {str(e)}"}), 400
@@ -1068,6 +1089,119 @@ def translate():
             "message": f"Translation error: {str(e)}"
         }), 500
 
+@app.route("/get_recommendations", methods=["POST"])
+def get_recommendations():
+    print("\n\nInside /get_recommendations endpoint\n\n")
+    data = request.get_json()
+    video_url = data.get("video", "")
+    print("Received video_url:", video_url)
+
+    # Extract video ID from URL
+    match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", video_url)
+    if not match:
+        return jsonify({"error": "Invalid YouTube URL"}), 400
+
+    video_id = match.group(1)
+
+    try:
+        # Get original video title
+        with YoutubeDL({'quiet': True}) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            title = info.get("title", "")
+    except Exception as e:
+        print("yt-dlp failed:", str(e))
+        return jsonify({"error": "Could not fetch video title."}), 500
+
+    try:
+        # Search for similar videos using yt-dlp
+        search_url = f"ytsearch10:{title}"  # get top 10 to filter by popularity
+        with YoutubeDL({'quiet': True}) as ydl:
+            search_results = ydl.extract_info(search_url, download=False)['entries']
+
+        recommendations = []
+
+        for video in search_results:
+            if video['id'] != video_id:  # Skip the original video
+                views = video.get('view_count', 0)
+                likes = video.get('like_count', 0)
+
+                recommendations.append({
+                    "title": video.get('title'),
+                    "videoId": video.get('id'),
+                    "thumbnail": video.get('thumbnail'),
+                    "length": video.get('duration'),
+                    "channel": video.get('uploader'),
+                    "views": views,
+                    "likes": likes,
+                    "popularity": (views or 0) + (likes or 0)  # Simple popularity score
+                })
+                if len(recommendations) == 20:
+                    break
+
+        # Sort videos by popularity
+        recommendations.sort(key=lambda x: x["popularity"], reverse=True)
+
+        # Keep top 6 only
+        final_recommendations = recommendations[:5]
+
+        print("Recommended videos:", final_recommendations)
+        return jsonify({"success": True, "recommendedVideos": final_recommendations})
+
+    except Exception as e:
+        print("Error during recommendations:", str(e))
+        return jsonify({"error": str(e)}), 500
+    
+
+
+# @app.route("/get_recommendations", methods=["POST"])
+# def get_recommendations():
+#     print("\n\nInside /get_recommendations endpoint]/n/n")
+#     data = request.get_json()
+#     video_url = data.get("video", "")
+#     print("Received video_url:", video_url)
+
+#     import re
+#     match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", video_url)
+#     if not match:
+#         return jsonify({"error": "Invalid YouTube URL"}), 400
+
+#     video_id = match.group(1)
+
+#     try:
+#         # Get video title from the given URL
+#         with YoutubeDL({'quiet': True}) as ydl:
+#             info = ydl.extract_info(video_url, download=False)
+#             title = info.get("title", "")
+#             # print("Fetched title with yt-dlp:", title)
+#     except Exception as e:
+#         print("yt-dlp failed:", str(e))
+#         return jsonify({"error": "Could not fetch video title."}), 500
+
+#     try:
+#         # Now search YouTube using yt-dlp with title
+#         search_url = f"ytsearch5:{title}"
+#         with YoutubeDL({'quiet': True}) as ydl:
+#             search_results = ydl.extract_info(search_url, download=False)['entries']
+
+#         recommendations = []
+#         for video in search_results:
+#             if video['id'] != video_id:  # skip original video
+#                 recommendations.append({
+#                     "title": video.get('title'),
+#                     "videoId": video.get('id'),
+#                     "thumbnail": video.get('thumbnail'),
+#                     "length": video.get('duration'),  # Video duration in seconds
+#                     "channel": video.get('uploader')
+#                 })
+#             if len(recommendations) == 6:
+#                 break
+
+#         print("Recommended videos:", recommendations)
+#         return jsonify({"success": True,"recommendedVideos": recommendations})
+
+#     except Exception as e:
+#         print("Error during recommendations:", str(e))
+#         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
