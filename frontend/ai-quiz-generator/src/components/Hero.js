@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FaYoutube, FaLink, FaPlay, FaPause, FaStop, FaVolumeUp, FaVolumeMute } from "react-icons/fa"; // Icons for YouTube and Hyperlink
 import { Link } from "react-router-dom";
 import Translation from './Translation';
+import axios from "axios"; // Import axios for API requests
 
 const Hero = () => {
   const [mode, setMode] = useState("youtube"); // State for toggle button
@@ -22,6 +23,10 @@ const Hero = () => {
   const [recommendations, setRecommendations] = useState(false);
   const [recommendationData, setRecommendationData] = useState([]);
   const [showRecommendations, setShowRecommendations] = useState(false);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showClickbaitResult, setShowClickbaitResult] = useState(false);
 
   useEffect(() => {
     const fetchRecommendations = async () => {
@@ -63,7 +68,38 @@ const Hero = () => {
     };
   }, []);
 
+  const handleClickbaitClick = async () => {
+    console.log("Entered URL:", inputValue);
 
+    if (!inputValue.trim()) {
+      setError("Please enter a valid YouTube URL.");
+      return;
+    }
+
+    const youtubeUrlPattern = /^(https?\:\/\/)?(www\.youtube\.com|youtu\.be)\/.+$/;
+    if (!youtubeUrlPattern.test(inputValue)) {
+      setError("Please enter a valid YouTube URL.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setResult(null);
+
+    try {
+      const response = await axios.post("/detect_clickbait", {
+        video_url: inputValue,
+      });
+
+      setResult(response.data);
+      setShowClickbaitResult(true);
+
+    } catch (err) {
+      setError(err.response?.data?.error || "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
   // Update utterance text when summary changes
   useEffect(() => {
     if (speech && summaryResult) {
@@ -293,7 +329,25 @@ const Hero = () => {
                   {recommendations ? 'Hide Recommendations' : 'Show Recommendations'}
                 </button>
               )}
+              {mode === 'youtube' && (
+                <button
+                  onClick={handleClickbaitClick}
+                  className="bg-black p-4 w-full max-w-md py-1 text-lg font-semibold rounded-full transition-all duration-300 ease-in-out transform hover:scale-105"
+                  size="lg"
+                >
+                  Check Clickbait
+                </button>
+              )}
             </div>
+          )}
+          {/* Toggle button for showing/hiding the result */}
+          {result && (
+            <button
+              onClick={() => setShowClickbaitResult((prev) => !prev)}
+              className="bg-black px-4 w-full max-w-md py-2 text-lg font-semibold rounded-full transition-all duration-300 ease-in-out transform hover:scale-105"
+            >
+              {showClickbaitResult ? 'Hide Clickbait Result' : 'Show Clickbait Result'}
+            </button>
           )}
         </div>
 
@@ -458,6 +512,18 @@ const Hero = () => {
               </div>
             </div>
           </main>
+        )}
+        {/* Clickbait Section */}
+
+        {error && <p className="text-red-500 mt-2">{error}</p>}
+        {showClickbaitResult && result && (
+          <div className="text-black mt-6 bg-white shadow-md rounded-lg p-4 w-full max-w-md text-left">
+            <p><strong>Title:</strong> {result.title}</p>
+            <p><strong>Label:</strong> {result.label}</p>
+            <p><strong>Cosine Similarity:</strong> {result.avg_cosine_similarity}</p>
+            <p><strong>Dislike/Like Ratio:</strong> {result.dislike_like_ratio}</p>
+            <p><strong>Fake Comment Ratio:</strong> {result.fake_comment_ratio}</p>
+          </div>
         )}
         {/* Recommendations Box */}
         {recommendations && recommendationData.length > 0 && (
