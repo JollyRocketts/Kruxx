@@ -15,12 +15,20 @@ from bs4 import BeautifulSoup
 from youtubesearchpython import VideosSearch
 from yt_dlp import YoutubeDL
 import re
+import urllib.parse
+import urllib.request
+import numpy as np
+from textblob import TextBlob
+from googleapiclient.discovery import build
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 app = Flask(__name__)
 CORS(app)
 load_dotenv()
 
 app.secret_key = os.getenv('secret_key')
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 # print(app.secret_key)
 
 bart_summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
@@ -1151,57 +1159,130 @@ def get_recommendations():
         print("Error during recommendations:", str(e))
         return jsonify({"error": str(e)}), 500
     
+def extract_video_id(url):
+    try:
+        parsed_url = urllib.parse.urlparse(url)
+        if parsed_url.hostname == 'youtu.be':
+            return parsed_url.path[1:]
+        if parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
+            query = urllib.parse.parse_qs(parsed_url.query)
+            return query.get('v', [None])[0]
+    except Exception:
+        return None
+
+def get_transcript(video_id, segment_count=4):
+    transcript = YouTubeTranscriptApi.get_transcript(video_id)
+    full_text = " ".join([entry['text'] for entry in transcript])
+    words = full_text.split()
+    chunk_size = len(words) // segment_count
+    return [" ".join(words[i*chunk_size:(i+1)*chunk_size]) for i in range(segment_count)]
 
 
-# @app.route("/get_recommendations", methods=["POST"])
-# def get_recommendations():
-#     print("\n\nInside /get_recommendations endpoint]/n/n")
-#     data = request.get_json()
-#     video_url = data.get("video", "")
-#     print("Received video_url:", video_url)
+def compute_cosine_similarity(title, text_parts):
+    similarities = []
+    for part in text_parts:
+        vectorizer = TfidfVectorizer().fit_transform([title, part])
+        sim = cosine_similarity(vectorizer[0:1], vectorizer[1:2])[0][0]
+        similarities.append(sim)
+    return np.mean(similarities)
 
-#     import re
-#     match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", video_url)
-#     if not match:
-#         return jsonify({"error": "Invalid YouTube URL"}), 400
+def analyze_comments(comments):
+    polarity_counts = {'positive': 0, 'negative': 0, 'clickbait_phrases': 0}
+    clickbait_keywords = [
+        'fake', 'bullshit', 'hoax', 'wrong', 'liar', 'false', 'misinformation',
+        'rumor', 'clickbait', 'myth', 'not true'
+    ]
+    for c in comments:
+        text = c.lower()
+        blob = TextBlob(text)
+        if blob.sentiment.polarity > 0:
+            polarity_counts['positive'] += 1
+        elif blob.sentiment.polarity < 0:
+            polarity_counts['negative'] += 1
+        if any(kw in text for kw in clickbait_keywords):
+            polarity_counts['clickbait_phrases'] += 1
+    return polarity_counts, len(comments)
 
-#     video_id = match.group(1)
+def get_video_details(video_id):
+    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+    request = youtube.videos().list(part="snippet,statistics", id=video_id)
+    response = request.execute()
+    data = response['items'][0]
+    snippet = data['snippet']
+    stats = data['statistics']
+    return {
+        'title': snippet['title'],
+        'channel_id': snippet['channelId'],
+        'likes': int(stats.get('likeCount', 0)),
+        'dislikes': int(stats.get('dislikeCount', 1)),
+        'views': int(stats.get('viewCount', 0)),
+        'comment_count': int(stats.get('commentCount', 0))
+    }
 
-#     try:
-#         # Get video title from the given URL
-#         with YoutubeDL({'quiet': True}) as ydl:
-#             info = ydl.extract_info(video_url, download=False)
-#             title = info.get("title", "")
-#             # print("Fetched title with yt-dlp:", title)
-#     except Exception as e:
-#         print("yt-dlp failed:", str(e))
-#         return jsonify({"error": "Could not fetch video title."}), 500
+def get_channel_details(channel_id):
+    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+    request = youtube.channels().list(part="snippet,statistics", id=channel_id)
+    response = request.execute()
+    data = response['items'][0]
+    stats = data['statistics']
+    return {
+        'subscribers': int(stats.get('subscriberCount', 1)),
+        'views': int(stats.get('viewCount', 0)),
+        'videos': int(stats.get('videoCount', 1))
+    }
 
-#     try:
-#         # Now search YouTube using yt-dlp with title
-#         search_url = f"ytsearch5:{title}"
-#         with YoutubeDL({'quiet': True}) as ydl:
-#             search_results = ydl.extract_info(search_url, download=False)['entries']
+def get_top_comments(video_id, max_comments=50):
+    youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+    request = youtube.commentThreads().list(
+        part="snippet", videoId=video_id, maxResults=max_comments, textFormat="plainText"
+    )
+    response = request.execute()
+    return [item['snippet']['topLevelComment']['snippet']['textDisplay'] for item in response['items']]
 
-#         recommendations = []
-#         for video in search_results:
-#             if video['id'] != video_id:  # skip original video
-#                 recommendations.append({
-#                     "title": video.get('title'),
-#                     "videoId": video.get('id'),
-#                     "thumbnail": video.get('thumbnail'),
-#                     "length": video.get('duration'),  # Video duration in seconds
-#                     "channel": video.get('uploader')
-#                 })
-#             if len(recommendations) == 6:
-#                 break
+@app.route('/detect_clickbait', methods=['POST'])
+def detect_clickbait():
+    data = request.get_json()
+    video_url = data.get('video_url')
+    print(f"\nReceived video_url: {video_url}")
+    if not video_url:
+        return jsonify({'error': 'Missing video_url parameter'}), 400
 
-#         print("Recommended videos:", recommendations)
-#         return jsonify({"success": True,"recommendedVideos": recommendations})
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        return jsonify({'error': 'Invalid YouTube URL'}), 400
+    print(f"\nVideo URL: {video_url}")
+    print(f"\nVideo ID: {video_id}") 
+    try:
+        # Get data
+        video_data = get_video_details(video_id)
+        channel_data = get_channel_details(video_data['channel_id'])
+        transcript_parts = get_transcript(video_id)
+        avg_cs = compute_cosine_similarity(video_data['title'], transcript_parts)
+        dl_ratio = video_data['dislikes'] / (video_data['likes'] + 1)
 
-#     except Exception as e:
-#         print("Error during recommendations:", str(e))
-#         return jsonify({"error": str(e)}), 500
+        # Comment analysis
+        comments = get_top_comments(video_id)
+        comment_stats, total_comments = analyze_comments(comments)
+        fccr = comment_stats['clickbait_phrases'] / total_comments if total_comments else 0
+
+        # Evidence checks
+        evidence_1 = avg_cs > 0.10 or dl_ratio >= 0.40
+        evidence_2 = fccr > 0.10
+        evidence_3 = False  # Optional enhancement
+
+        label = "Clickbait" if (evidence_1 or evidence_2 or evidence_3) else "Non-Clickbait"
+
+        return jsonify({
+            'label': label,
+            'title': video_data['title'],
+            'avg_cosine_similarity': round(avg_cs, 3),
+            'dislike_like_ratio': round(dl_ratio, 3),
+            'fake_comment_ratio': round(fccr, 3)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
