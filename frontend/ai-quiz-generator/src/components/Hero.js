@@ -81,9 +81,6 @@ const Hero = () => {
   const handleInputChange = (e) => {
     setInputValue(e.target.value);
   };
-  const handleRecommendationsChange = (value) => {
-    setRecommendations(value);
-  };
   const handleSummarizeClick = async () => {
     setShowModal(true);
     try {
@@ -291,7 +288,7 @@ const Hero = () => {
               {mode === 'youtube' && (
                 <button
                   className="bg-black p-4 w-full max-w-md py-1 text-lg font-semibold rounded-full transition-all duration-300 ease-in-out transform hover:scale-105"
-                  onClick={() => handleRecommendationsChange(!recommendations)}
+                  onClick={() => setRecommendations(prev => !prev)}
                 >
                   {recommendations ? 'Hide Recommendations' : 'Show Recommendations'}
                 </button>
@@ -463,7 +460,7 @@ const Hero = () => {
           </main>
         )}
         {/* Recommendations Box */}
-        {recommendationData.length > 0 && (
+        {recommendations && recommendationData.length > 0 && (
           <div>
             <h3>Recommended Videos</h3>
             <ul style={{ listStyleType: "none" }}>
