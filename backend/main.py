@@ -319,7 +319,55 @@ def quiz_pdf():
                     text = file.read()
 
                 global questions
-                questions = txt2questions(text)
+                
+                prompt = f"""
+                Generate exactly 10 multiple-choice questions (MCQs) from the text below.
+                Return only the dictionary itself, WITHOUT ASSIGNING IT TO A VARIABLE. No code fences, no explanation.
+                Return the result in the following Python dictionary format:
+
+                {{
+                    1: {{
+                        "question": "...",
+                        "answer": "...",
+                        "options": ["...", "...", "...", "..."]
+                    }},
+                    2: {{ ... }},
+                    ...
+                }}
+
+                Text:
+                {text}
+                """
+
+                # Generate MCQs using Gemini
+                response = model.generate_content(prompt)
+                content = response.text.strip()
+
+                # Debug: Log what we got from Gemini
+                print("RAW GEMINI RESPONSE:")
+                print(content)
+
+                if not content:
+                    return jsonify({'success': False, 'message': 'Gemini returned an empty response.'}), 500
+
+                # Remove markdown code fences (```json or ```)
+                content_clean = re.sub(r'^```[a-zA-Z]*|```$', '', content).strip()
+
+                # Extract dictionary block only
+                match = re.search(r'\{.*\}', content_clean, re.DOTALL)
+                if match:
+                    content_clean = match.group(0)
+                else:
+                    return jsonify({'success': False, 'message': 'Could not find dictionary content in Gemini response.'}), 500
+
+                try:
+                    questions = ast.literal_eval(content_clean)
+                except Exception as parse_err:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to parse dictionary from Gemini response: {parse_err}'
+                    }), 500
+
 
                 if questions:
                     return jsonify({
@@ -372,7 +420,53 @@ def quiz_doc():
                     text = file.read()
 
                 global questions
-                questions = txt2questions(text)
+                prompt = f"""
+                Generate exactly 10 multiple-choice questions (MCQs) from the text below.
+                Return only the dictionary itself, WITHOUT ASSIGNING IT TO A VARIABLE. No code fences, no explanation.
+                Return the result in the following Python dictionary format:
+
+                {{
+                    1: {{
+                        "question": "...",
+                        "answer": "...",
+                        "options": ["...", "...", "...", "..."]
+                    }},
+                    2: {{ ... }},
+                    ...
+                }}
+
+                Text:
+                {text}
+                """
+
+                # Generate MCQs using Gemini
+                response = model.generate_content(prompt)
+                content = response.text.strip()
+
+                # Debug: Log what we got from Gemini
+                print("RAW GEMINI RESPONSE:")
+                print(content)
+
+                if not content:
+                    return jsonify({'success': False, 'message': 'Gemini returned an empty response.'}), 500
+
+                # Remove markdown code fences (```json or ```)
+                content_clean = re.sub(r'^```[a-zA-Z]*|```$', '', content).strip()
+
+                # Extract dictionary block only
+                match = re.search(r'\{.*\}', content_clean, re.DOTALL)
+                if match:
+                    content_clean = match.group(0)
+                else:
+                    return jsonify({'success': False, 'message': 'Could not find dictionary content in Gemini response.'}), 500
+
+                try:
+                    questions = ast.literal_eval(content_clean)
+                except Exception as parse_err:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to parse dictionary from Gemini response: {parse_err}'
+                    }), 500
 
                 if questions:
                     return jsonify({
@@ -430,9 +524,58 @@ def quiz_ppt():
 
                 with open(text_filename, "w", encoding="utf-8") as text_file:
                     text_file.write(extracted_text)
-
+                
+                # Generate quiz questions from the text file
+                with open(text_filename, "r", encoding="utf-8") as file:
+                    text = file.read()
                 global questions
-                questions = txt2questions(extracted_text)
+                prompt = f"""
+                Generate exactly 10 multiple-choice questions (MCQs) from the text below.
+                Return only the dictionary itself, WITHOUT ASSIGNING IT TO A VARIABLE. No code fences, no explanation.
+                Return the result in the following Python dictionary format:
+
+                {{
+                    1: {{
+                        "question": "...",
+                        "answer": "...",
+                        "options": ["...", "...", "...", "..."]
+                    }},
+                    2: {{ ... }},
+                    ...
+                }}
+
+                Text:
+                {text}
+                """
+
+                # Generate MCQs using Gemini
+                response = model.generate_content(prompt)
+                content = response.text.strip()
+
+                # Debug: Log what we got from Gemini
+                print("RAW GEMINI RESPONSE:")
+                print(content)
+
+                if not content:
+                    return jsonify({'success': False, 'message': 'Gemini returned an empty response.'}), 500
+
+                # Remove markdown code fences (```json or ```)
+                content_clean = re.sub(r'^```[a-zA-Z]*|```$', '', content).strip()
+
+                # Extract dictionary block only
+                match = re.search(r'\{.*\}', content_clean, re.DOTALL)
+                if match:
+                    content_clean = match.group(0)
+                else:
+                    return jsonify({'success': False, 'message': 'Could not find dictionary content in Gemini response.'}), 500
+
+                try:
+                    questions = ast.literal_eval(content_clean)
+                except Exception as parse_err:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to parse dictionary from Gemini response: {parse_err}'
+                    }), 500
 
                 if questions:
                     return jsonify({
@@ -484,79 +627,77 @@ def quizup():
         global questions
         questions = {}
 
+        if 'quiz' not in request.files or request.files['quiz'].filename == '':
+            return jsonify({'success': False, 'message': 'No file was uploaded.'}), 400
+
         quiz_file = request.files['quiz']
         filename = quiz_file.filename
         quiz_file.save(filename)
 
-        if filename.lower().endswith('.txt'):
-            with open(filename, 'r') as file:
-                text = file.read()
+        if not filename.lower().endswith('.txt'):
+            return jsonify({'success': False, 'message': 'Uploaded file is not a .txt file.'}), 400
 
-            prompt = f"""
-            Generate exactly 10 multiple-choice questions (MCQs) from the text below.
-            Return only the dictionary itself, WITHOUT ASSIGNING IT TO A VARIABLE. No code fences, no explanation.
-            Return the result in the following Python dictionary format:
+        with open(filename, 'r', encoding='utf-8') as file:
+            text = file.read()
 
-            {{
-                1: {{
-                    "question": "...",
-                    "answer": "...",
-                    "options": ["...", "...", "...", "..."]
-                }},
-                2: {{ ... }},
-                ...
-            }}
+        prompt = f"""
+        Generate exactly 10 multiple-choice questions (MCQs) from the text below.
+        Return only the dictionary itself, WITHOUT ASSIGNING IT TO A VARIABLE. No code fences, no explanation.
+        Return the result in the following Python dictionary format:
 
-            Text:
-            {text}
-            """
+        {{
+            1: {{
+                "question": "...",
+                "answer": "...",
+                "options": ["...", "...", "...", "..."]
+            }},
+            2: {{ ... }},
+            ...
+        }}
 
-            # Generate MCQs using Gemini
-            response = model.generate_content(prompt)
-            content = response.text.strip()
+        Text:
+        {text}
+        """
 
-            # Debug: Log what we got from Gemini
-            print("RAW GEMINI RESPONSE:")
-            print(content)
+        # Generate MCQs using Gemini
+        response = model.generate_content(prompt)
+        content = response.text.strip()
 
-            if not content:
-                return jsonify({'success': False, 'message': 'Gemini returned an empty response.'}), 500
+        # Debug: Log what we got from Gemini
+        print("RAW GEMINI RESPONSE:")
+        print(content)
 
-            # Remove markdown code fences (```json or ```)
-            content_clean = re.sub(r'^```[a-zA-Z]*|```$', '', content.strip()).strip()
+        if not content:
+            return jsonify({'success': False, 'message': 'Gemini returned an empty response.'}), 500
 
-            # Replace single quotes with double quotes for valid JSON
-            content_clean = content_clean.replace("'", '"')
+        # Remove markdown code fences (```json or ```)
+        content_clean = re.sub(r'^```[a-zA-Z]*|```$', '', content).strip()
 
-            # Manually wrap numeric keys in quotes
-            content_clean = re.sub(r'(\d+):', r'"\1":', content_clean)
+        # Extract dictionary block only
+        match = re.search(r'\{.*\}', content_clean, re.DOTALL)
+        if match:
+            content_clean = match.group(0)
+        else:
+            return jsonify({'success': False, 'message': 'Could not find dictionary content in Gemini response.'}), 500
 
-            # Try extracting dictionary using regex (anything between { and final })
-            match = re.search(r'\{.*\}', content_clean, re.DOTALL)
-            if match:
-                content_clean = match.group(0)
-            else:
-                return jsonify({'success': False, 'message': 'Could not find dictionary content in Gemini response.'}), 500
-
-            # Remove trailing commas
-            content_clean = re.sub(r',\s*([\]}])', r'\1', content_clean)
-
-            # Parse to dictionary
-            questions = json.loads(content_clean)
-
+        try:
+            questions = ast.literal_eval(content_clean)
+        except Exception as parse_err:
             return jsonify({
-                "success": True,
-                "message": "Quiz generated successfully!"
-                # "questions": questions
-            })
+                'success': False,
+                'message': f'Failed to parse dictionary from Gemini response: {parse_err}'
+            }), 500
 
-    except json.JSONDecodeError as e:
-        return jsonify({'success': False, 'message': f'Failed to parse JSON: {e}'}), 500
+        return jsonify({
+            "success": True,
+            "message": "Quiz generated successfully!"
+            # "questions": questions   # Uncomment this if you want to return the questions too
+        })
 
     except Exception as e:
         return jsonify({'success': False, 'message': f'Unexpected error: {e}'}), 500
 
-    return jsonify({'success': False, 'message': 'Failed to generate quiz.'}), 500
+
 
 @app.route('/success', methods=['POST'])
 def success():
