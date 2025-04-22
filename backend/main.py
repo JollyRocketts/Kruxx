@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 from flask_cors import CORS
 from transformers import pipeline
 import os
+import json
+import ast
 import textract
 import requests
 from ocr_processing import process_image
@@ -18,17 +20,20 @@ import re
 import urllib.parse
 import urllib.request
 import numpy as np
+import google.generativeai as genai
 from textblob import TextBlob
 from googleapiclient.discovery import build
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
-
 app = Flask(__name__)
 CORS(app)
 load_dotenv()
 
 app.secret_key = os.getenv('secret_key')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
+gemini_api_key=os.getenv('gemini_api_key')
+genai.configure(api_key=gemini_api_key)
+model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
 # print(app.secret_key)
 
 bart_summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
@@ -486,27 +491,72 @@ def quizup():
         if filename.lower().endswith('.txt'):
             with open(filename, 'r') as file:
                 text = file.read()
-            questions = txt2questions(text)
 
-            if text:
-                return jsonify({
-                    "success": True,
-                    "message": "Quiz generated successfully!"
-                })
-        else:
+            prompt = f"""
+            Generate exactly 10 multiple-choice questions (MCQs) from the text below.
+            Return only the dictionary itself, WITHOUT ASSIGNING IT TO A VARIABLE. No code fences, no explanation.
+            Return the result in the following Python dictionary format:
+
+            {{
+                1: {{
+                    "question": "...",
+                    "answer": "...",
+                    "options": ["...", "...", "...", "..."]
+                }},
+                2: {{ ... }},
+                ...
+            }}
+
+            Text:
+            {text}
+            """
+
+            # Generate MCQs using Gemini
+            response = model.generate_content(prompt)
+            content = response.text.strip()
+
+            # Debug: Log what we got from Gemini
+            print("RAW GEMINI RESPONSE:")
+            print(content)
+
+            if not content:
+                return jsonify({'success': False, 'message': 'Gemini returned an empty response.'}), 500
+
+            # Remove markdown code fences (```json or ```)
+            content_clean = re.sub(r'^```[a-zA-Z]*|```$', '', content.strip()).strip()
+
+            # Replace single quotes with double quotes for valid JSON
+            content_clean = content_clean.replace("'", '"')
+
+            # Manually wrap numeric keys in quotes
+            content_clean = re.sub(r'(\d+):', r'"\1":', content_clean)
+
+            # Try extracting dictionary using regex (anything between { and final })
+            match = re.search(r'\{.*\}', content_clean, re.DOTALL)
+            if match:
+                content_clean = match.group(0)
+            else:
+                return jsonify({'success': False, 'message': 'Could not find dictionary content in Gemini response.'}), 500
+
+            # Remove trailing commas
+            content_clean = re.sub(r',\s*([\]}])', r'\1', content_clean)
+
+            # Parse to dictionary
+            questions = json.loads(content_clean)
+
             return jsonify({
-                "success": False,
-                "message": "Invalid file type. Please upload a text file."
+                "success": True,
+                "message": "Quiz generated successfully!"
+                # "questions": questions
             })
+
+    except json.JSONDecodeError as e:
+        return jsonify({'success': False, 'message': f'Failed to parse JSON: {e}'}), 500
+
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "message": f"Error generating quiz: {e}"
-        })
+        return jsonify({'success': False, 'message': f'Unexpected error: {e}'}), 500
 
-
-
-
+    return jsonify({'success': False, 'message': 'Failed to generate quiz.'}), 500
 
 @app.route('/success', methods=['POST'])
 def success():
@@ -1027,24 +1077,75 @@ def summarize():
 
 
 
+# @app.route('/quiz', methods=['GET', 'POST'])
+# def quiz():
+#     global questions
+#     if request.method == 'POST':
+#         try:
+#             uploaded_file = request.files['quiz']
+#             filename = uploaded_file.filename
+#             uploaded_file.save(filename)
+
+#             with open(filename, 'r') as file:
+#                 text = file.read()
+
+#             questions = txt2questions(text)
+#             print(questions)
+#             return jsonify({"success": True, "message": "Quiz generated successfully!"})
+
+#         except Exception as e:
+#             return jsonify({"success": False, "message": f"Error processing quiz: {e}"}), 400
+
+#     elif request.method == 'GET':
+#         if questions:
+#             return jsonify({"success": True, "questions": questions})
+#         else:
+#             return jsonify({"success": False, "message": "No quiz found. Please generate a quiz first."}), 404
+
 @app.route('/quiz', methods=['GET', 'POST'])
 def quiz():
     global questions
+
     if request.method == 'POST':
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'message': 'Empty filename'}), 400
+
         try:
-            uploaded_file = request.files['quiz']
-            filename = uploaded_file.filename
-            uploaded_file.save(filename)
+            text = file.read().decode('utf-8')
 
-            with open(filename, 'r') as file:
-                text = file.read()
+            prompt = f"""
+            Generate exactly 10 multiple-choice questions (MCQs) from the text below.
+            Return the result in the following Python dictionary format:
 
-            questions = txt2questions(text)
+            {{
+                1: {{
+                    "question": "...",
+                    "answer": "...",
+                    "options": ["...", "...", "...", "..."]
+                }},
+                2: {{ ... }},
+                ...
+            }}
 
-            return jsonify({"success": True, "message": "Quiz generated successfully!"})
+            Text:
+            {text}
+            """
+
+            # Generate MCQs using Gemini
+            response = model.generate_content(prompt)
+            content = response.text.strip()
+
+            # Safely evaluate the dictionary (assuming Gemini follows prompt format)
+            questions = eval(content)  # NOTE: safe only if you trust Gemini's output
+
+            return jsonify({"success": True, "message": "Quiz generated successfully!", "questions": questions})
 
         except Exception as e:
-            return jsonify({"success": False, "message": f"Error processing quiz: {e}"}), 400
+            return jsonify({'success': False, 'message': f'Error processing quiz: {e}'}), 500
 
     elif request.method == 'GET':
         if questions:
