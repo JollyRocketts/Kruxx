@@ -1494,13 +1494,20 @@ def detect_clickbait():
         return jsonify({'error': 'Invalid YouTube URL'}), 400
     print(f"\nVideo URL: {video_url}")
     print(f"\nVideo ID: {video_id}") 
+    
     try:
         # Get data
+        api_url = f"https://returnyoutubedislikeapi.com/votes?videoId={video_id}"
+        response = requests.get(api_url)
+        data = response.json()
+        dislikes=data.get("dislikes")
         video_data = get_video_details(video_id)
         channel_data = get_channel_details(video_data['channel_id'])
         transcript_parts = get_transcript(video_id)
         avg_cs = compute_cosine_similarity(video_data['title'], transcript_parts)
-        dl_ratio = video_data['dislikes'] / (video_data['likes'] + 1)
+        print(dislikes)
+        print(video_data['likes'])
+        dl_ratio = dislikes/ (video_data['likes'] + 1)
 
         # Comment analysis
         comments = get_top_comments(video_id)
